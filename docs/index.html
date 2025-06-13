@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adaptive VSP Builder</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        header { margin-bottom: 20px; }
+        #chat-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        #score { margin-top: 10px; }
+        .message { margin: 5px 0; }
+        .user { color: blue; }
+        .vsp { color: green; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Adaptive Virtual Simulated Patient Builder</h1>
+</header>
+<section id="api-key-section">
+    <label>OpenAI API Key: <input type="password" id="api-key" placeholder="sk-..." /></label>
+</section>
+<section id="builder">
+    <h2>Case Builder</h2>
+    <label>Patient Name: <input type="text" id="patient-name" /></label><br>
+    <label>Age: <input type="number" id="patient-age" /></label><br>
+    <label>Personality/Background:<br><textarea id="patient-desc" rows="3"></textarea></label><br>
+    <label>Diagnosis: <input type="text" id="true-dx" /></label><br>
+    <label>Sample Q&A (JSON format):<br><textarea id="qa" rows="4" placeholder='{"hello": "hi"}'></textarea></label><br>
+    <button id="start-chat">Start Chat</button>
+</section>
+<section id="chat" style="display:none;">
+    <h2>Consultation</h2>
+    <div id="chat-box"></div>
+    <input type="text" id="user-input" placeholder="Your question" />
+    <button id="send">Send</button>
+    <div id="score">Score: <span id="score-value">0</span></div>
+</section>
+<script>
+const openEnded = [/^what/i, /^how/i, /^why/i, /^tell me/i];
+let score = 0;
+let exchangeCount = 0;
+let diagnosisAsked = false;
+let caseData = {};
+function updateScore(msg){
+    if(openEnded.some(re => re.test(msg))){
+        score += 5;
+    }
+    document.getElementById('score-value').textContent = score;
+}
+function appendMessage(text, cls){
+    const div = document.createElement('div');
+    div.className = 'message ' + cls;
+    div.textContent = text;
+    document.getElementById('chat-box').appendChild(div);
+    document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
+}
+async function sendToOpenAI(messages){
+    const apiKey = document.getElementById('api-key').value.trim();
+    const body = {
+        model: 'gpt-3.5-turbo',
+        messages: messages
+    };
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+        body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    return data.choices[0].message.content.trim();
+}
+function promptDiagnosis(){
+    const dx = prompt('Enter your working diagnosis:');
+    if(dx){
+        const actual = caseData.diagnosis.toLowerCase();
+        const guess = dx.toLowerCase();
+        let similarity = 0;
+        if(actual === guess){ similarity = 1; }
+        else {
+            const longer = Math.max(actual.length, guess.length);
+            let same = 0; for(let i=0;i<longer;i++){ if(actual[i]===guess[i]) same++; }
+            similarity = same / longer;
+        }
+        appendMessage('Your diagnosis similarity: ' + Math.round(similarity*100) + '%', 'vsp');
+        if(similarity >= 0.7){
+            appendMessage('Correct! The diagnosis was: ' + caseData.diagnosis, 'vsp');
+            diagnosisAsked = true;
+        }
+    }
+}
+document.getElementById('start-chat').addEventListener('click', () => {
+    caseData = {
+        name: document.getElementById('patient-name').value,
+        age: document.getElementById('patient-age').value,
+        desc: document.getElementById('patient-desc').value,
+        diagnosis: document.getElementById('true-dx').value,
+        qa: {} 
+    };
+    try{ caseData.qa = JSON.parse(document.getElementById('qa').value); }catch(e){ alert('Invalid Q&A JSON'); return; }
+    document.getElementById('builder').style.display = 'none';
+    document.getElementById('chat').style.display = 'block';
+    appendMessage('Patient ' + caseData.name + ' is ready. Begin your consultation.', 'vsp');
+});
+document.getElementById('send').addEventListener('click', async () => {
+    const input = document.getElementById('user-input');
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = '';
+    appendMessage(text, 'user');
+    updateScore(text);
+    exchangeCount++;
+    const qaResponse = caseData.qa[text.toLowerCase()];
+    if(qaResponse){
+        appendMessage(qaResponse, 'vsp');
+    } else {
+        const sysPrompt = `You are playing patient ${caseData.name}, age ${caseData.age}. ${caseData.desc}`;
+        const messages = [
+            { role: 'system', content: sysPrompt },
+            { role: 'user', content: text }
+        ];
+        try{
+            const reply = await sendToOpenAI(messages);
+            appendMessage(reply, 'vsp');
+        }catch(err){
+            appendMessage('Error contacting OpenAI: ' + err.message, 'vsp');
+        }
+    }
+    if(exchangeCount % 5 === 0 && !diagnosisAsked){
+        promptDiagnosis();
+    }
+});
+</script>
+</body>
+</html>
