@@ -1,0 +1,12 @@
+{
+  "name": "Alex",
+  "age": 30,
+  "responses": {
+    "hello": "Hello doctor, I'm Alex.",
+    "how are you": "I have been feeling a bit sick recently.",
+    "where is the pain": "It's a dull ache in my chest."
+  },
+  "diagnosis": "chest infection",
+  "key_features": ["Fever", "Cough", "Chest discomfort"],
+  "ice_keywords": ["concerns", "expectations"]
+}
